@@ -17,7 +17,6 @@ from utils.data_processing_bronze_table import (
 
 SILVER_LOAN_DAILY_DIR = "datalake/silver/lms_loan_daily/"
 SILVER_CUSTOMER_FEATURES_DIR = "datalake/silver/customer_features/"
-SILVER_ATTRIBUTES_DIR = "datalake/silver/attributes/"
 SILVER_CLICKSTREAM_DIR = "datalake/silver/clickstream/"
 
 # to remove duplicate values in Type_of_Loan
@@ -48,14 +47,13 @@ def cast_columns(df, type_map, strip_underscore_cols=()):
 def run(spark):
     os.makedirs(SILVER_LOAN_DAILY_DIR, exist_ok=True)
     os.makedirs(SILVER_CUSTOMER_FEATURES_DIR, exist_ok=True)
-    os.makedirs(SILVER_ATTRIBUTES_DIR, exist_ok=True)
     os.makedirs(SILVER_CLICKSTREAM_DIR, exist_ok=True)
 
     start_date_str = "2023-01-01"
     end_date_str = "2024-12-01"
     dates_str_lst = generate_first_of_month_dates(start_date_str, end_date_str)
 
-    # ---------------- LMS + Clickstream: per-month passthrough ----------------
+    # LMS + Clickstream: per-month passthrough
     lms_type_map = {
         "loan_id": StringType(),
         "Customer_ID": StringType(),
@@ -88,7 +86,7 @@ def run(spark):
         df.write.mode("overwrite").parquet(
             os.path.join(SILVER_CLICKSTREAM_DIR, f"silver_feature_clickstream_{date_tag}.parquet"))
 
-    # ---------------- Financial + Attributes: all-history single pass ----------------
+    # Financial + Attributes: all-history single pass
     fin_paths = [os.path.join(BRONZE_FIN_DIR, f"bronze_features_financials_{d.replace('-','_')}.csv")
                  for d in dates_str_lst]
     attr_paths = [os.path.join(BRONZE_ATTR_DIR, f"bronze_features_attributes_{d.replace('-','_')}.csv")
@@ -171,14 +169,6 @@ def run(spark):
         & (col("Occupation") != "_______")
     )
     attr_df = attr_df.withColumn("Name", F.regexp_extract(col("Name"), r'^"*([^"]+)', 1))
-    attr_df = attr_df.cache()
-
-    # Write attributes silver per month (preserve existing partition file convention)
-    for date_str in dates_str_lst:
-        date_tag = date_str.replace('-', '_')
-        snap = datetime.strptime(date_str, "%Y-%m-%d").date()
-        attr_df.filter(col("snapshot_date") == F.lit(snap)).write.mode("overwrite").parquet(
-            os.path.join(SILVER_ATTRIBUTES_DIR, f"silver_features_attributes_{date_tag}.parquet"))
 
     # Join fin + attr into customer_features (join BEFORE IQR)
     customer_features_df = fin_df.join(
